@@ -29,7 +29,7 @@ public class Application {
         return new TransportStack();
     }
 
-    @Bean(name = "threadPoolSender")
+    @Bean(name = "threadPoolTransfer")
     public Executor threadPoolTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
