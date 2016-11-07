@@ -13,10 +13,7 @@ import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
+import java.nio.channels.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -135,14 +132,17 @@ public class ConnectorNIO {
             return;
         }
         buf.flip();
+        SocketChannel oppositeChannel;
         switch ((ConnectionType) key.attachment()) {
             case CLIENT_CONNECTION_TYPE:
                 messages.get(ConnectionType.CLIENT_CONNECTION_TYPE).add(buf);
-                channel.register(key.selector(), SelectionKey.OP_WRITE, ConnectionType.CLIENT_CONNECTION_TYPE);
+                oppositeChannel = channels.get(ConnectionType.SERVER_CONNECTION_TYPE);
+                oppositeChannel.register(selector,SelectionKey.OP_WRITE, ConnectionType.SERVER_CONNECTION_TYPE);
                 break;
             case SERVER_CONNECTION_TYPE:
                 messages.get(ConnectionType.SERVER_CONNECTION_TYPE).add(buf);
-                channel.register(key.selector(), SelectionKey.OP_WRITE, ConnectionType.SERVER_CONNECTION_TYPE);
+                oppositeChannel = channels.get(ConnectionType.SERVER_CONNECTION_TYPE);
+                oppositeChannel.register(selector,SelectionKey.OP_WRITE, ConnectionType.SERVER_CONNECTION_TYPE);
                 break;
             default:
                 logger.logMore_2(CLASS_NAME, EXCEPTION_UNKNOWN_CONNECTION_TYPE);
