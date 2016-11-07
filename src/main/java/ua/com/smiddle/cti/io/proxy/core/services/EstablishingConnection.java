@@ -17,8 +17,8 @@ import java.net.Socket;
  * @author srg on 03.11.16.
  * @project cti_io_proxy
  */
-@Component("EstablishingConnection")
-@Scope("singleton")
+//@Component("EstablishingConnection")
+//@Scope("singleton")
 public class EstablishingConnection implements Runnable {
     @Autowired
     Environment env;
