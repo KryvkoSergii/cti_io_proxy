@@ -86,7 +86,7 @@ public class LoggerUtil {
      */
     @Scheduled(initialDelay = 1 * 60 * 1000, fixedDelay = 1 * 60 * 1000)
     private void updateSettings() {
-        if (settingsUtil.getSettings().getDebugLevel() != debugLevel)
+//        if (settingsUtil.getSettings().getDebugLevel() != debugLevel)
             debugLevel = settingsUtil.getSettings().getDebugLevel();
     }
 

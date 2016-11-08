@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import ua.com.smiddle.cti.io.proxy.core.model.Settings;
+
 import javax.annotation.PostConstruct;
 
 @Component("SettingsUtil")
@@ -41,8 +42,8 @@ public class SettingsUtil {
 
     @PostConstruct
     private void setUP() {
-                settings.fillFromEnviroment(environment);
-                LoggerUtil.logAnywayStdOut("SettingsUtil", "Initialized with: " + settings);
+        settings.fillFromEnviroment(environment);
+        logger.setDebugLevel(settings.getDebugLevel());
     }
 
 }

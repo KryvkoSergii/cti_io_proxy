@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import ua.com.smiddle.cti.io.proxy.core.model.Attachment;
 import ua.com.smiddle.cti.io.proxy.core.model.ConnectionType;
 import ua.com.smiddle.cti.io.proxy.core.util.LoggerUtil;
 
@@ -16,7 +17,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * @author srg on 07.11.16.
@@ -35,9 +35,9 @@ public class ConnectorNIO {
     @Autowired
     @Qualifier("LoggerUtil")
     private LoggerUtil logger;
+    private volatile boolean interruped = false;
     private Selector selector;
-    private Map<ConnectionType, Queue<ByteBuffer>> messages = new ConcurrentHashMap<>();
-    private Map<ConnectionType, SocketChannel> channels = new HashMap<>();
+    private Map<ConnectionType, Attachment> connections = new ConcurrentHashMap<>();
 
     public ConnectorNIO() {
     }
@@ -67,7 +67,7 @@ public class ConnectorNIO {
         asServerChannel.register(selector, SelectionKey.OP_ACCEPT);
 
         //обработка селектов
-        while (true) {
+        while (!interruped) {
             selector.select();
             for (Iterator<SelectionKey> itKeys = selector.selectedKeys().iterator(); itKeys.hasNext(); ) {
                 SelectionKey key = itKeys.next();
@@ -79,8 +79,6 @@ public class ConnectorNIO {
                         read(key);
                     } else if (key.isWritable()) {
                         write(key);
-                    } else if (key.isConnectable()) {
-                        connect(key);
                     }
                 }
             }
@@ -90,36 +88,17 @@ public class ConnectorNIO {
     private void connect(SelectionKey key) throws IOException {
         SocketChannel channel = (SocketChannel) key.channel();
         channel.finishConnect();
-        messages.put(ConnectionType.SERVER_CONNECTION_TYPE, new ConcurrentLinkedQueue<ByteBuffer>());
-        channels.put(ConnectionType.CLIENT_CONNECTION_TYPE, channel);
+        connections.put(ConnectionType.SERVER_CONNECTION_TYPE, new Attachment(channel, ConnectionType.SERVER_CONNECTION_TYPE));
         logger.logMore_2(CLASS_NAME, FIELD_CONNECTED_NEW_SERVER);
     }
 
     private void write(SelectionKey key) throws IOException {
         ByteBuffer buf;
-        switch ((ConnectionType) key.attachment()) {
-            case CLIENT_CONNECTION_TYPE:
-                while ((buf = messages.get(key.attachment()).peek()) != null)
-                    channels.get(ConnectionType.SERVER_CONNECTION_TYPE).write(buf);
-                if (!buf.hasRemaining())
-                    messages.get(key.attachment()).poll();
-                else {
-                    return;
-                }
-                break;
-            case SERVER_CONNECTION_TYPE:
-                while ((buf = messages.get(key.attachment()).peek()) != null)
-                    channels.get(ConnectionType.CLIENT_CONNECTION_TYPE).write(buf);
-                if (!buf.hasRemaining())
-                    messages.get(key.attachment()).poll();
-                else {
-                    return;
-                }
-                break;
-            default:
-                logger.logMore_2(CLASS_NAME, EXCEPTION_UNKNOWN_CONNECTION_TYPE);
-                break;
-        }
+        Attachment attachment = (Attachment) key.attachment();
+        while ((buf = attachment.getMessages().poll()) != null)
+            attachment.getChannel().write(buf);
+//        if (!buf.hasRemaining()) attachment.getMessages().poll();
+        attachment.getChannel().register(selector, SelectionKey.OP_READ, attachment);
     }
 
     private void read(SelectionKey key) throws IOException {
@@ -127,22 +106,22 @@ public class ConnectorNIO {
         ByteBuffer buf = ByteBuffer.allocateDirect(4096);
         int read = channel.read(buf);
         if (read == -1) {
-            channels.remove(key.attachment());
-            messages.remove(key.attachment());
+//            connections.remove(key.attachment());
+            connections.get(ConnectionType.SERVER_CONNECTION_TYPE).getChannel().close();
+            connections.get(ConnectionType.CLIENT_CONNECTION_TYPE).getChannel().close();
             return;
         }
         buf.flip();
-        SocketChannel oppositeChannel;
-        switch ((ConnectionType) key.attachment()) {
+        switch (((Attachment) key.attachment()).getConnectionType()) {
             case CLIENT_CONNECTION_TYPE:
-                messages.get(ConnectionType.CLIENT_CONNECTION_TYPE).add(buf);
-                oppositeChannel = channels.get(ConnectionType.SERVER_CONNECTION_TYPE);
-                oppositeChannel.register(selector,SelectionKey.OP_WRITE, ConnectionType.SERVER_CONNECTION_TYPE);
+                connections.get(ConnectionType.SERVER_CONNECTION_TYPE).getMessages().add(buf);
+                connections.get(ConnectionType.SERVER_CONNECTION_TYPE)
+                        .getChannel().register(selector, SelectionKey.OP_WRITE, connections.get(ConnectionType.SERVER_CONNECTION_TYPE));
                 break;
             case SERVER_CONNECTION_TYPE:
-                messages.get(ConnectionType.SERVER_CONNECTION_TYPE).add(buf);
-                oppositeChannel = channels.get(ConnectionType.SERVER_CONNECTION_TYPE);
-                oppositeChannel.register(selector,SelectionKey.OP_WRITE, ConnectionType.SERVER_CONNECTION_TYPE);
+                connections.get(ConnectionType.CLIENT_CONNECTION_TYPE).getMessages().add(buf);
+                connections.get(ConnectionType.CLIENT_CONNECTION_TYPE)
+                        .getChannel().register(selector, SelectionKey.OP_WRITE, connections.get(ConnectionType.CLIENT_CONNECTION_TYPE));
                 break;
             default:
                 logger.logMore_2(CLASS_NAME, EXCEPTION_UNKNOWN_CONNECTION_TYPE);
@@ -160,9 +139,9 @@ public class ConnectorNIO {
         ServerSocketChannel ssc = (ServerSocketChannel) key.channel();
         SocketChannel channel = ssc.accept();
         channel.configureBlocking(false);
-        channel.register(key.selector(), SelectionKey.OP_READ, ConnectionType.CLIENT_CONNECTION_TYPE);
-        messages.put(ConnectionType.CLIENT_CONNECTION_TYPE, new ConcurrentLinkedQueue<ByteBuffer>());
-        channels.put(ConnectionType.CLIENT_CONNECTION_TYPE, channel);
+        Attachment attachment = new Attachment(channel, ConnectionType.CLIENT_CONNECTION_TYPE);
+        channel.register(key.selector(), SelectionKey.OP_READ, attachment);
+        connections.put(ConnectionType.CLIENT_CONNECTION_TYPE, attachment);
         logger.logMore_2(CLASS_NAME, FIELD_ACCEPTED_NEW_CLIENT_CONNECTION + channel.getRemoteAddress());
         //подключение к серверу
         checkConnectionToServer();
@@ -173,10 +152,10 @@ public class ConnectorNIO {
                 new InetSocketAddress(environment.getProperty("connection.server.ip"),
                         Integer.valueOf(environment.getProperty("connection.server.port"))));
         channel.configureBlocking(false);
-        channel.register(selector, SelectionKey.OP_CONNECT, ConnectionType.SERVER_CONNECTION_TYPE);
+        Attachment attachment = new Attachment(channel, ConnectionType.SERVER_CONNECTION_TYPE);
+        channel.register(selector, SelectionKey.OP_CONNECT, attachment);
         channel.finishConnect();
-        messages.put(ConnectionType.SERVER_CONNECTION_TYPE, new ConcurrentLinkedQueue<ByteBuffer>());
-        channels.put(ConnectionType.SERVER_CONNECTION_TYPE, channel);
-        logger.logMore_2(CLASS_NAME, FIELD_CONNECTED_NEW_SERVER);
+        connections.put(ConnectionType.SERVER_CONNECTION_TYPE, attachment);
+        logger.logMore_2(CLASS_NAME, FIELD_CONNECTED_NEW_SERVER + channel.getRemoteAddress());
     }
 }

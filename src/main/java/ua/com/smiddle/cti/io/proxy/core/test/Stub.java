@@ -23,6 +23,8 @@ public class Stub {
             int data;
             while ((data = is.read()) != -1) {
                 os.write(convert(data));
+                System.out.println((char) convert(data));
+                os.flush();
             }
 
         } catch (IOException e) {
