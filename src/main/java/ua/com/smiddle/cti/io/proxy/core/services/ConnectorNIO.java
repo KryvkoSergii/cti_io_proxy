@@ -11,6 +11,7 @@ import ua.com.smiddle.cti.io.proxy.core.model.ConnectionType;
 import ua.com.smiddle.cti.io.proxy.core.util.LoggerUtil;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -106,9 +107,18 @@ public class ConnectorNIO {
         ByteBuffer buf = ByteBuffer.allocateDirect(4096);
         int read = channel.read(buf);
         if (read == -1) {
-//            connections.remove(key.attachment());
-            connections.get(ConnectionType.SERVER_CONNECTION_TYPE).getChannel().close();
-            connections.get(ConnectionType.CLIENT_CONNECTION_TYPE).getChannel().close();
+            switch (((Attachment) key.attachment()).getConnectionType()) {
+                case CLIENT_CONNECTION_TYPE:
+                    logger.logMore_2(CLASS_NAME, "Client " + ((Attachment) key.attachment()).getChannel().getRemoteAddress() + " terminated connection");
+                    break;
+                case SERVER_CONNECTION_TYPE:
+                    logger.logMore_2(CLASS_NAME, "Server " + ((Attachment) key.attachment()).getChannel().getRemoteAddress() + " terminated connection");
+                    break;
+                default:
+                    logger.logMore_2(CLASS_NAME, EXCEPTION_UNKNOWN_CONNECTION_TYPE);
+                    break;
+            }
+            closeConnections();
             return;
         }
         buf.flip();
@@ -144,7 +154,12 @@ public class ConnectorNIO {
         connections.put(ConnectionType.CLIENT_CONNECTION_TYPE, attachment);
         logger.logMore_2(CLASS_NAME, FIELD_ACCEPTED_NEW_CLIENT_CONNECTION + channel.getRemoteAddress());
         //подключение к серверу
-        checkConnectionToServer();
+        try {
+            checkConnectionToServer();
+        } catch (Exception e) {
+            logger.logMore_2(CLASS_NAME, "accept: connecting to server throw Exception=" + e.getMessage());
+            closeConnections();
+        }
     }
 
     private void checkConnectionToServer() throws IOException {
@@ -157,5 +172,27 @@ public class ConnectorNIO {
         channel.finishConnect();
         connections.put(ConnectionType.SERVER_CONNECTION_TYPE, attachment);
         logger.logMore_2(CLASS_NAME, FIELD_CONNECTED_NEW_SERVER + channel.getRemoteAddress());
+    }
+
+    private void closeConnections() throws IOException {
+        for (Iterator attachmentIter = connections.entrySet().iterator(); attachmentIter.hasNext(); ) {
+            Map.Entry<ConnectionType, Attachment> attachment = (Map.Entry<ConnectionType, Attachment>) attachmentIter.next();
+            if (attachment.getValue().getChannel() != null) {
+                logger.logMore_2(CLASS_NAME, "Closing " + attachment.getKey() + " for " + attachment.getValue().getChannel().getRemoteAddress());
+                attachment.getValue().getMessages().clear();
+                attachment.getValue().getChannel().close();
+            }
+        }
+        connections.clear();
+    }
+
+    @PreDestroy
+    private void destroy() {
+        try {
+            closeConnections();
+            logger.logAnyway(CLASS_NAME, "destroying...");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
