@@ -44,6 +44,7 @@ public class SettingsUtil {
     private void setUP() {
         settings.fillFromEnviroment(environment);
         logger.setDebugLevel(settings.getDebugLevel());
+        logger.logAnyway("SettingsUtil", "Initialized with" + settings);
     }
 
 }

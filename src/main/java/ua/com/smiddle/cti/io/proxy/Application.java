@@ -6,9 +6,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.*;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import ua.com.smiddle.cti.io.proxy.core.TransportStack;
-
-import java.util.Iterator;
 import java.util.concurrent.Executor;
 
 /**
@@ -23,10 +20,6 @@ public class Application {
 
     public static void main(String[] args) {
         ApplicationContext ctx = SpringApplication.run(Application.class, args);
-        for (int i = 0; i < ctx.getBeanDefinitionNames().length; i++) {
-            String s = ctx.getBeanDefinitionNames()[i];
-            System.out.println(s);
-        }
     }
 
 //    @Bean(name = "TransportStack", destroyMethod = "destroy")

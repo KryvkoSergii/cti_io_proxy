@@ -30,13 +30,12 @@ public class ConnectorNIO {
     private final static String EXCEPTION_UNKNOWN_CONNECTION_TYPE = "Unknown connection type";
     private final static String FIELD_ACCEPTED_NEW_CLIENT_CONNECTION = "Accepted new client connection: ";
     private final static String FIELD_CONNECTED_NEW_SERVER = "New server connected: ";
-
     @Autowired
     Environment environment;
     @Autowired
     @Qualifier("LoggerUtil")
     private LoggerUtil logger;
-    private volatile boolean interruped = false;
+    private volatile boolean interrupted = false;
     private Selector selector;
     private Map<ConnectionType, Attachment> connections = new ConcurrentHashMap<>();
 
@@ -68,7 +67,7 @@ public class ConnectorNIO {
         asServerChannel.register(selector, SelectionKey.OP_ACCEPT);
 
         //обработка селектов
-        while (!interruped) {
+        while (!interrupted) {
             selector.select();
             for (Iterator<SelectionKey> itKeys = selector.selectedKeys().iterator(); itKeys.hasNext(); ) {
                 SelectionKey key = itKeys.next();
@@ -189,6 +188,7 @@ public class ConnectorNIO {
     @PreDestroy
     private void destroy() {
         try {
+            interrupted = true;
             closeConnections();
             logger.logAnyway(CLASS_NAME, "destroying...");
         } catch (IOException e) {
